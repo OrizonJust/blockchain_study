@@ -2,42 +2,52 @@ package ru.laverno.blockchain.model;
 
 import ru.laverno.blockchain.utils.StringUtils;
 
+import java.util.ArrayList;
 import java.util.Date;
+import java.util.List;
+import java.util.Objects;
 
 public class Block {
 
     public String hash;
     public String previousHash;
-    private String data; //our data will be a simple message.
-    private long timeStamp; //as number of milliseconds since 1/1/1970.
+    public String merkleRoot;
+    public List<Transaction> transactions = new ArrayList<>();
+    private long timeStamp;
     private int nonce;
 
-    //Block Constructor.
-    public Block(String data,String previousHash ) {
-        this.data = data;
+    public Block(String previousHash) {
         this.previousHash = previousHash;
         this.timeStamp = new Date().getTime();
-
-        this.hash = calculateHash(); //Making sure we do this after we set the other values.
+        this.hash = calculateHash();
     }
 
-    //Calculate new hash based on blocks contents
     public String calculateHash() {
-        String calculatedhash = StringUtils.applySha256(
-                previousHash +
-                        Long.toString(timeStamp) +
-                        Integer.toString(nonce) +
-                        data
-        );
-        return calculatedhash;
+        return StringUtils.applySha256(previousHash + timeStamp + nonce + merkleRoot);
     }
 
     public void mineBlock(int difficulty) {
+        merkleRoot = StringUtils.getMerkleRoot(transactions);
         String target = new String(new char[difficulty]).replace('\0', '0'); //Create a string with difficulty * "0"
-        while(!hash.substring( 0, difficulty).equals(target)) {
-            nonce ++;
+        while (!hash.substring(0, difficulty).equals(target)) {
+            nonce++;
             hash = calculateHash();
         }
         System.out.println("Block Mined!!! : " + hash);
+    }
+
+    public boolean addTransaction(Transaction transaction) {
+        if (transaction == null) {
+            return false;
+        }
+
+        if (!previousHash.equals("0") && !transaction.processTransaction()) {
+            System.out.println("Transaction failed to process. Discarded!");
+            return false;
+        }
+
+        transactions.add(transaction);
+        System.out.println("Transaction successfully added to Block.");
+        return true;
     }
 }
