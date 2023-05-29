@@ -1,9 +1,11 @@
 package ru.laverno.blockchain;
 
-import com.google.gson.GsonBuilder;
+import lombok.Getter;
 import org.bouncycastle.jce.provider.BouncyCastleProvider;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import ru.laverno.blockchain.exception.BlockchainValidException;
 import ru.laverno.blockchain.model.*;
-import ru.laverno.blockchain.utils.StringUtils;
 
 import java.security.Security;
 import java.util.ArrayList;
@@ -13,137 +15,179 @@ import java.util.Map;
 
 public class Main {
 
-    public static List<Block> blockchain = new ArrayList<>();
-    public static Map<String, TransactionOutput> UTXOs = new HashMap<>();
-    public static int difficulty = 5;
-    public static float minimumTransaction = 0.1f;
-    public static Wallet walletA;
-    public static Wallet walletB;
-    public static Transaction genesisTransaction;
+    private static final Logger logger = LoggerFactory.getLogger(Main.class);
+
+    private static final List<Block> blockchain = new ArrayList<>();
+
+    @Getter
+    protected static final Map<String, TransactionOutput> UTXO = new HashMap<>();
+    private static final int DIFFICULTY = 5;
+
+    public static final float MINIMUM_TRANSACTION = 0.1f;
+    private static Wallet walletA;
+    private static Wallet walletB;
+    private static Transaction genesisTransaction;
 
     public static void main(String[] args) {
         Security.addProvider(new BouncyCastleProvider());
 
         walletA = new Wallet();
         walletB = new Wallet();
-        Wallet coinbase = new Wallet();
+        final var coinbase = new Wallet();
 
         genesisTransaction = new Transaction(coinbase.getPublicKey(), walletA.getPublicKey(), 100f, null);
         genesisTransaction.generateSignature(coinbase.getPrivateKey());
         genesisTransaction.setId("0");
-        genesisTransaction.outputs.add(new TransactionOutput(genesisTransaction.getRecipient(), genesisTransaction.getValue(), genesisTransaction.getId()));
-        UTXOs.put(genesisTransaction.outputs.get(0).getId(), genesisTransaction.outputs.get(0));
+        genesisTransaction.getOutputs().add(new TransactionOutput(genesisTransaction.getRecipient(), genesisTransaction.getValue(), genesisTransaction.getId()));
+        UTXO.put(genesisTransaction.getOutputs().get(0).getId(), genesisTransaction.getOutputs().get(0));
 
-        System.out.println("Creating and Mining Genesis block...");
-        Block genesis = new Block("0");
-        genesis.addTransaction(genesisTransaction);
+        logger.info("Creating and Mining Genesis Block...");
+        final var genesis = new Block("0");
+        if (!genesis.addTransaction(genesisTransaction)) {
+            return;
+        }
         addBlock(genesis);
 
-        Block block1 = new Block(genesis.hash);
-        System.out.println("\nWalletA's balance is: " + walletA.getBalance());
-        System.out.println("\nWalletA is Attemping to send funds (40) to WalletB...");
+        final var block1 = new Block(genesis.getHash());
+        logWalletBalance();
+        logger.info("WalletA is Attempting to send funds (40) to WalletB...");
         block1.addTransaction(walletA.sendFunds(walletB.getPublicKey(), 40f));
         addBlock(block1);
-        System.out.println("\nWalletA's balance is: " + walletA.getBalance());
-        System.out.println("\nWalletB's balance is: " + walletB.getBalance());
+        logWalletBalance();
 
-        Block block2 = new Block(block1.hash);
-        System.out.println("\nWalletA Attempting to  send more funds (1000) than it has...");
+        final var block2 = new Block(block1.getHash());
+        logger.info("WalletA Attempting to send more funds (1000) than it has...");
         block2.addTransaction(walletA.sendFunds(walletB.getPublicKey(), 1000f));
         addBlock(block2);
-        System.out.println("\nWalletA's balance is: " + walletA.getBalance());
-        System.out.println("\nWalletB's balance is: " + walletB.getBalance());
+        logWalletBalance();
 
-        Block block3 = new Block(block2.hash);
-        System.out.println("\nWalletB is Attempting to send funds (20) to WalletA...");
+        Block block3 = new Block(block2.getHash());
+        logger.info("WalletB is Attempting to send funds (20) to WalletA...");
         block3.addTransaction(walletB.sendFunds(walletA.getPublicKey(), 20));
-        System.out.println("\nWalletA's balance is: " + walletA.getBalance());
-        System.out.println("\nWalletB's balance is: " + walletB.getBalance());
+        logWalletBalance();
 
-        isChainValid();
+        if (!isChainValid()) {
+            throw new BlockchainValidException("Blockchain is not valid!");
+        }
     }
 
     public static boolean isChainValid() {
         Block currentBlock;
         Block previousBlock;
 
-        String hashTarget = new String(new char[difficulty]).replace('\0', '0');
-        Map<String, TransactionOutput> tempUTXOs = new HashMap<>();
-        tempUTXOs.put(genesisTransaction.outputs.get(0).getId(), genesisTransaction.outputs.get(0));
+        final var hashTarget = new String(new char[DIFFICULTY]).replace('\0', '0');
+        final var tempUnspentTransactionOutputs = new HashMap<String, TransactionOutput>();
+        tempUnspentTransactionOutputs.put(genesisTransaction.getOutputs().get(0).getId(), genesisTransaction.getOutputs().get(0));
 
-        //loop through blockchain to check hashes:
-        for(int i=1; i < blockchain.size(); i++) {
+        try {
+            for (int i = 1; i < blockchain.size(); i++) {
 
-            currentBlock = blockchain.get(i);
-            previousBlock = blockchain.get(i-1);
-            //compare registered hash and calculated hash:
-            if(!currentBlock.hash.equals(currentBlock.calculateHash()) ){
-                System.out.println("#Current Hashes not equal");
-                return false;
-            }
-            //compare previous hash and registered previous hash
-            if(!previousBlock.hash.equals(currentBlock.previousHash) ) {
-                System.out.println("#Previous Hashes not equal");
-                return false;
-            }
-            //check if hash is solved
-            if(!currentBlock.hash.substring( 0, difficulty).equals(hashTarget)) {
-                System.out.println("#This block hasn't been mined");
-                return false;
-            }
+                currentBlock = blockchain.get(i);
+                previousBlock = blockchain.get(i - 1);
 
-            //loop thru blockchains transactions:
-            TransactionOutput tempOutput;
-            for(int t=0; t <currentBlock.transactions.size(); t++) {
-                Transaction currentTransaction = currentBlock.transactions.get(t);
+                compareHashes(currentBlock);
 
-                if(!currentTransaction.verifySignature()) {
-                    System.out.println("#Signature on Transaction(" + t + ") is Invalid");
-                    return false;
-                }
-                if(currentTransaction.getInputsValue() != currentTransaction.getOutputsValue()) {
-                    System.out.println("#Inputs are note equal to outputs on Transaction(" + t + ")");
-                    return false;
-                }
+                comparePreviousHashes(previousBlock, currentBlock);
 
-                for(TransactionInput input: currentTransaction.inputs) {
-                    tempOutput = tempUTXOs.get(input.getTransactionOutputId());
+                hashSolved(currentBlock, hashTarget);
 
-                    if(tempOutput == null) {
-                        System.out.println("#Referenced input on Transaction(" + t + ") is Missing");
-                        return false;
+                TransactionOutput tempOutput;
+                for (var currentTransaction : currentBlock.getTransactions()) {
+
+                    verifySignature(currentTransaction);
+
+                    compareInputOutputValues(currentTransaction);
+
+                    for (var input : currentTransaction.getInputs()) {
+                        tempOutput = tempUnspentTransactionOutputs.get(input.getTransactionOutputId());
+
+                        checkOutput(tempOutput, currentTransaction.getId());
+
+                        checkValue(input, tempOutput, currentTransaction.getId());
+
+                        tempUnspentTransactionOutputs.remove(input.getTransactionOutputId());
                     }
 
-                    if(input.getUTXO().getValue() != tempOutput.getValue()) {
-                        System.out.println("#Referenced input Transaction(" + t + ") value is Invalid");
-                        return false;
+                    for (TransactionOutput output : currentTransaction.getOutputs()) {
+                        tempUnspentTransactionOutputs.put(output.getId(), output);
                     }
 
-                    tempUTXOs.remove(input.getTransactionOutputId());
-                }
+                    checkRecipient(currentTransaction, currentTransaction.getId());
 
-                for(TransactionOutput output: currentTransaction.outputs) {
-                    tempUTXOs.put(output.getId(), output);
+                    checkSender(currentTransaction, currentTransaction.getId());
                 }
-
-                if( currentTransaction.outputs.get(0).getRecipient() != currentTransaction.getRecipient()) {
-                    System.out.println("#Transaction(" + t + ") output reciepient is not who it should be");
-                    return false;
-                }
-                if( currentTransaction.outputs.get(1).getRecipient() != currentTransaction.getSender()) {
-                    System.out.println("#Transaction(" + t + ") output 'change' is not sender.");
-                    return false;
-                }
-
             }
-
+        } catch (BlockchainValidException ex) {
+            logger.error("Blockchain is not Valid!");
+            logger.error(ex.getMessage());
+            return false;
         }
-        System.out.println("Blockchain is valid");
+
+        logger.info("Blockchain is Valid!");
         return true;
     }
 
     public static void addBlock(Block newBlock) {
-        newBlock.mineBlock(difficulty);
+        newBlock.mineBlock(DIFFICULTY);
         blockchain.add(newBlock);
+    }
+
+    private static void compareHashes(final Block currentBlock) {
+        if (!currentBlock.getHash().equals(currentBlock.calculateHash())) {
+            throw new BlockchainValidException("Current Hashes not equal");
+        }
+    }
+
+    private static void comparePreviousHashes(final Block previousBlock, final Block currentBlock) {
+        if (!previousBlock.getHash().equals(currentBlock.getPreviousHash())) {
+            throw new BlockchainValidException("Previous Hashes not equal");
+        }
+    }
+
+    private static void hashSolved(final Block currentBlock, final String hashTarget) {
+        if (!currentBlock.getHash().substring(0, DIFFICULTY).equals(hashTarget)) {
+            throw new BlockchainValidException("This block hasn't been mined");
+        }
+    }
+
+    private static void verifySignature(final Transaction currentTransaction) {
+        if (currentTransaction.verifySignature()) {
+            throw new BlockchainValidException("Signature on Transaction with id: " + currentTransaction.getId() + ". is Invalid!");
+        }
+    }
+
+    private static void compareInputOutputValues(final Transaction currentTransaction) {
+        if (currentTransaction.getInputsValue() != currentTransaction.getOutputsValue()) {
+            throw new BlockchainValidException("Inputs are not equal to outputs on Transaction with id: " + currentTransaction.getId());
+        }
+    }
+
+    private static void checkOutput(final TransactionOutput tempOutput, final String id) {
+        if (tempOutput == null) {
+            throw new BlockchainValidException("Referenced input on Transaction with id: " + id + " is Missing!");
+        }
+    }
+
+    private static void checkValue(final TransactionInput input, final TransactionOutput tempOutput, final String id) {
+        if (input.getUnspentTransactionOutput().getValue() != tempOutput.getValue()) {
+            throw new BlockchainValidException("Referenced input Transaction with id: " + id + " value is Invalid");
+        }
+    }
+
+    private static void checkRecipient(final Transaction currentTransaction, final String id) {
+        if (currentTransaction.getOutputs().get(0).getRecipient() != currentTransaction.getRecipient()) {
+            throw new BlockchainValidException("Transaction with id: " + id + " output recipient is not who it should be");
+        }
+    }
+
+    private static void checkSender(final Transaction currentTransaction, final String id) {
+        if (currentTransaction.getOutputs().get(1).getRecipient() != currentTransaction.getSender()) {
+            throw new BlockchainValidException("Transaction with id: " + id + " output 'change' is not sender");
+        }
+    }
+
+    private static void logWalletBalance() {
+        logger.info("WalletA's balance is: {}", walletA.getBalance());
+        logger.info("WalletB's balance is: {}", walletB.getBalance());
     }
 }

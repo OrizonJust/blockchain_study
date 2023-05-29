@@ -1,5 +1,9 @@
 package ru.laverno.blockchain.model;
 
+import lombok.Getter;
+import lombok.Setter;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import ru.laverno.blockchain.Main;
 import ru.laverno.blockchain.utils.StringUtils;
 
@@ -10,110 +14,103 @@ import java.util.List;
 
 public class Transaction {
 
+    private static final Logger logger = LoggerFactory.getLogger(Transaction.class);
+
+    @Getter
+    @Setter
     private String id;
-    private PublicKey sender;
-    private PublicKey recipient;
-    private float value;
+
+    @Getter
+    private final PublicKey sender;
+
+    @Getter
+    private final PublicKey recipient;
+
+    @Getter
+    private final float value;
+
     private byte[] signature;
 
-    public List<TransactionInput> inputs = new ArrayList<>();
-    public List<TransactionOutput> outputs = new ArrayList<>();
+    @Getter
+    private final List<TransactionInput> inputs;
 
-    private static int sequence = 0;
+    @Getter
+    private final List<TransactionOutput> outputs;
 
-    public Transaction(PublicKey from, PublicKey to, float value, List<TransactionInput> inputs) {
+    public Transaction(final PublicKey from, final PublicKey to, final float value, final List<TransactionInput> inputs) {
         this.sender = from;
         this.recipient = to;
         this.value = value;
         this.inputs = inputs;
-    }
-
-    public String getId() {
-        return this.id;
-    }
-
-    public void setId(String id) {
-        this.id = id;
-    }
-
-    public PublicKey getSender() {
-        return this.sender;
-    }
-
-    public PublicKey getRecipient() {
-        return this.recipient;
-    }
-
-    public float getValue() {
-        return this.value;
+        this.outputs = new ArrayList<>();
     }
 
     private String calculateHash() {
-        sequence++;
-
-        return StringUtils.applySha256(StringUtils.getStringFromKey(sender) + StringUtils.getStringFromKey(recipient) + Float.toString(value) + sequence);
+        return StringUtils.applySha256(StringUtils.getStringFromKey(sender) + StringUtils.getStringFromKey(recipient) + value + (Math.random() * 100 + 1));
     }
 
-    public void generateSignature(PrivateKey privateKey) {
-        String data = StringUtils.getStringFromKey(sender) + StringUtils.getStringFromKey(recipient) + Float.toString(value);
+    public void generateSignature(final PrivateKey privateKey) {
+        final var data = StringUtils.getStringFromKey(sender) + StringUtils.getStringFromKey(recipient) + value;
         signature = StringUtils.applyECDSASign(privateKey, data);
     }
 
     public boolean verifySignature() {
-        String data = StringUtils.getStringFromKey(sender) + StringUtils.getStringFromKey(recipient) + Float.toString(value);
-        return StringUtils.verifyECDSASign(sender, data, signature);
+        final var data = StringUtils.getStringFromKey(sender) + StringUtils.getStringFromKey(recipient) + value;
+        return !StringUtils.verifyECDSASign(sender, data, signature);
     }
 
     public boolean processTransaction() {
-        if (!verifySignature()) {
-            System.out.println("Transaction Signature failed to verify");
+        if (verifySignature()) {
+            logger.info("Transaction signature failed to verify.");
             return false;
         }
 
-        for (TransactionInput input : inputs) {
-            input.setUTXO(Main.UTXOs.get(input.getTransactionOutputId()));
+        for (var input : inputs) {
+            input.setUnspentTransactionOutput(Main.getUTXO().get(input.getTransactionOutputId()));
         }
 
-        if (getInputsValue() < Main.minimumTransaction) {
-            System.out.println("Transaction Inputs to small: " + getInputsValue());
+        if (getInputsValue() < Main.MINIMUM_TRANSACTION) {
+            logger.info("Transaction inputs to small: {}", getInputsValue());
             return false;
         }
 
-        float leftOver = getInputsValue() - value;
+        final var leftOver = getInputsValue() - value;
         id = calculateHash();
         outputs.add(new TransactionOutput(this.recipient, value, id));
         outputs.add(new TransactionOutput(this.sender, leftOver, id));
 
-        for (TransactionOutput output : outputs) {
-            Main.UTXOs.put(output.getId(), output);
+        for (var output : outputs) {
+            Main.getUTXO().put(output.getId(), output);
         }
 
-        for (TransactionInput input : inputs) {
-            if (input.getUTXO() == null) {
+        for (var input : inputs) {
+            if (input.getUnspentTransactionOutput() == null) {
                 continue;
             }
 
-            Main.UTXOs.remove(input.getUTXO().getId());
+            Main.getUTXO().remove(input.getUnspentTransactionOutput().getId());
         }
 
         return true;
     }
 
     public float getInputsValue() {
-        float total = 0;
-        for (TransactionInput input : inputs) {
-            if (input.getUTXO() == null) {
+        var total = 0f;
+
+        for (var input : inputs) {
+            if (input.getUnspentTransactionOutput() == null) {
                 continue;
             }
-            total += input.getUTXO().getValue();
+            total += input.getUnspentTransactionOutput().getValue();
         }
 
         return total;
     }
 
     public float getOutputsValue() {
-        float total = 0;
-        for (TransactionOutput output : outputs) {
+        var total = 0;
+
+        for (var output : outputs) {
             total += output.getValue();
         }
 

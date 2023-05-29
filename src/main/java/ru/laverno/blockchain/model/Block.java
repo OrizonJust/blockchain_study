@@ -1,22 +1,34 @@
 package ru.laverno.blockchain.model;
 
+import lombok.Getter;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import ru.laverno.blockchain.utils.StringUtils;
 
 import java.util.ArrayList;
 import java.util.Date;
 import java.util.List;
-import java.util.Objects;
 
 public class Block {
 
-    public String hash;
-    public String previousHash;
-    public String merkleRoot;
-    public List<Transaction> transactions = new ArrayList<>();
-    private long timeStamp;
+    private static final Logger logger = LoggerFactory.getLogger(Block.class);
+
+    @Getter
+    private String hash;
+
+    @Getter
+    private final String previousHash;
+
+    private String merkleRoot;
+
+    @Getter
+    private final List<Transaction> transactions = new ArrayList<>();
+
+    private final long timeStamp;
+
     private int nonce;
 
-    public Block(String previousHash) {
+    public Block(final String previousHash) {
         this.previousHash = previousHash;
         this.timeStamp = new Date().getTime();
         this.hash = calculateHash();
@@ -26,28 +38,30 @@ public class Block {
         return StringUtils.applySha256(previousHash + timeStamp + nonce + merkleRoot);
     }
 
-    public void mineBlock(int difficulty) {
+    public void mineBlock(final int difficulty) {
         merkleRoot = StringUtils.getMerkleRoot(transactions);
-        String target = new String(new char[difficulty]).replace('\0', '0'); //Create a string with difficulty * "0"
+        final var target = new String(new char[difficulty]).replace('\0', '0');
+
         while (!hash.substring(0, difficulty).equals(target)) {
             nonce++;
             hash = calculateHash();
         }
-        System.out.println("Block Mined!!! : " + hash);
+
+        logger.info("Block has been mined! - {}", hash);
     }
 
-    public boolean addTransaction(Transaction transaction) {
+    public boolean addTransaction(final Transaction transaction) {
         if (transaction == null) {
             return false;
         }
 
         if (!previousHash.equals("0") && !transaction.processTransaction()) {
-            System.out.println("Transaction failed to process. Discarded!");
+            logger.info("Transaction failed to process. Discarded!");
             return false;
         }
 
         transactions.add(transaction);
-        System.out.println("Transaction successfully added to Block.");
+        logger.info("Transaction successfully added to Block.");
         return true;
     }
 }
