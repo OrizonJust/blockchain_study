@@ -1,5 +1,6 @@
 package ru.laverno.blockchain.utils;
 
+import ru.laverno.blockchain.exception.CryptographicException;
 import ru.laverno.blockchain.model.Transaction;
 
 import java.nio.charset.StandardCharsets;
@@ -18,67 +19,68 @@ public class StringUtils {
         try {
             final var digest = MessageDigest.getInstance("SHA-256");
 
-            byte[] hash = digest.digest(input.getBytes(StandardCharsets.UTF_8));
+            final var hash = digest.digest(input.getBytes(StandardCharsets.UTF_8));
 
-            final var sb = new StringBuffer();
+            final var sb = new StringBuilder();
 
-            for (int i = 0; i < hash.length; i++) {
+            for (var item : hash) {
+                final var hex = Integer.toHexString(0xff & item);
 
-                final var hex = Integer.toHexString(0xff & hash[i]);
                 if (hex.length() == 1) {
                     sb.append('0');
                 }
+
                 sb.append(hex);
             }
 
             return sb.toString();
         } catch (NoSuchAlgorithmException ex) {
-            throw new RuntimeException();
+            throw new CryptographicException("Can't find algorithm: SHA-256");
         }
     }
 
-    public static byte[] applyECDSASign(PrivateKey privateKey, String input) {
+    public static byte[] applyECDSASign(final PrivateKey privateKey, final String input) {
         byte[] output;
 
         try {
-            Signature dsa = Signature.getInstance("ECDSA", "BC");
+            final var dsa = Signature.getInstance("ECDSA", "BC");
             dsa.initSign(privateKey);
 
-            byte[] strByte = input.getBytes();
+            final var strByte = input.getBytes();
             dsa.update(strByte);
 
             output = dsa.sign();
         } catch (Exception ex) {
-            throw new RuntimeException(ex);
+            throw new CryptographicException("Can't get instance Signature with parameters: algorithm{ECDSA}, provider{BC}");
         }
 
         return output;
     }
 
-    public static boolean verifyECDSASign(PublicKey publicKey, String data, byte[] signature) {
+    public static boolean verifyECDSASign(final PublicKey publicKey, final String data, final byte[] signature) {
         try {
-            Signature ecdsaVerify = Signature.getInstance("ECDSA", "BC");
+            final var ecdsaVerify = Signature.getInstance("ECDSA", "BC");
             ecdsaVerify.initVerify(publicKey);
             ecdsaVerify.update(data.getBytes());
             return ecdsaVerify.verify(signature);
         } catch (Exception ex) {
-            throw new RuntimeException(ex);
+            throw new CryptographicException("Can't verify signature!");
         }
     }
 
-    public static String getStringFromKey(Key key) {
+    public static String getStringFromKey(final Key key) {
         return Base64.getEncoder().encodeToString(key.getEncoded());
     }
 
-    public static String getMerkleRoot(List<Transaction> transactions) {
-        int count = transactions.size();
-        List<String> previousTreeLayer = new ArrayList<>();
+    public static String getMerkleRoot(final List<Transaction> transactions) {
+        var count = transactions.size();
+        var previousTreeLayer = new ArrayList<String>();
 
-        for (Transaction transaction : transactions) {
+        for (var transaction : transactions) {
             previousTreeLayer.add(transaction.getId());
         }
 
-        List<String> treeLayer = previousTreeLayer;
+        var treeLayer = previousTreeLayer;
 
         while (count > 1) {
             treeLayer = new ArrayList<>();

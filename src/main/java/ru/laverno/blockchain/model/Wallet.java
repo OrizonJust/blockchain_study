@@ -1,88 +1,89 @@
 package ru.laverno.blockchain.model;
 
+import lombok.Getter;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import ru.laverno.blockchain.Main;
+import ru.laverno.blockchain.exception.KeyPairGenerateException;
 
 import java.security.*;
 import java.security.spec.ECGenParameterSpec;
 import java.util.ArrayList;
 import java.util.HashMap;
-import java.util.List;
 import java.util.Map;
 
 public class Wallet {
 
+    private static final Logger logger = LoggerFactory.getLogger(Wallet.class);
+
+    @Getter
     private PrivateKey privateKey;
+
+    @Getter
     private PublicKey publicKey;
 
-    public Map<String, TransactionOutput> UTXOs = new HashMap<>();
+    @Getter
+    private final Map<String, TransactionOutput> unspentTransactionOutputs = new HashMap<>();
 
     public Wallet() {
         generateKeyPair();
     }
 
-    public PrivateKey getPrivateKey() {
-        return this.privateKey;
-    }
-
-    public PublicKey getPublicKey() {
-        return this.publicKey;
-    }
-
     private void generateKeyPair() {
         try {
-            KeyPairGenerator keyGen = KeyPairGenerator.getInstance("ECDSA", "BC");
-            SecureRandom random = SecureRandom.getInstance("SHA1PRNG");
-            ECGenParameterSpec ecSpec = new ECGenParameterSpec("prime192v1");
+            final var keyGen = KeyPairGenerator.getInstance("ECDSA", "BC");
+            final var random = SecureRandom.getInstance("SHA1PRNG");
+            final var ecSpec = new ECGenParameterSpec("secp256r1");
 
             keyGen.initialize(ecSpec, random);
-            KeyPair keyPair = keyGen.generateKeyPair();
+            final var keyPair = keyGen.generateKeyPair();
 
             privateKey = keyPair.getPrivate();
             publicKey = keyPair.getPublic();
         } catch (Exception ex) {
-            throw new RuntimeException();
+            throw new KeyPairGenerateException("Generate key pair not finished!");
         }
     }
 
     public float getBalance() {
-        float total = 0;
+        var total = 0;
 
-        for (Map.Entry<String, TransactionOutput> item : Main.UTXOs.entrySet()) {
-            TransactionOutput UTXO = item.getValue();
+        for (var item : Main.getUTXO().entrySet()) {
+            final var unspentTransactionOutput = item.getValue();
 
-            if (UTXO.isMine(publicKey)) {
-                UTXOs.put(UTXO.getId(), UTXO);
-                total += UTXO.getValue();
+            if (unspentTransactionOutput.isMine(publicKey)) {
+                unspentTransactionOutputs.put(unspentTransactionOutput.getId(), unspentTransactionOutput);
+                total += unspentTransactionOutput.getValue();
             }
         }
 
         return total;
     }
 
-    public Transaction sendFunds(PublicKey recipient, float value) {
+    public Transaction sendFunds(final PublicKey recipient, final float value) {
         if (getBalance() < value) {
-            System.out.println("Not enough funds to send transaction. Transaction discarded.");
+            logger.info("Not enough funds to send transaction. Transaction discarded.");
             return null;
         }
 
-        List<TransactionInput> inputs = new ArrayList<>();
+        final var inputs = new ArrayList<TransactionInput>();
 
-        float total = 0;
-        for (Map.Entry<String, TransactionOutput> item : UTXOs.entrySet()) {
-            TransactionOutput UTXO = item.getValue();
-            total += UTXO.getValue();
-            inputs.add(new TransactionInput(UTXO.getId()));
+        var total = 0f;
+        for (var item : unspentTransactionOutputs.entrySet()) {
+            final var unspentTransactionOutput = item.getValue();
+            total += unspentTransactionOutput.getValue();
+            inputs.add(new TransactionInput(unspentTransactionOutput.getId()));
 
             if (total > value) {
                 break;
             }
         }
 
-        Transaction newTransaction = new Transaction(publicKey, recipient, value, inputs);
+        final var newTransaction = new Transaction(publicKey, recipient, value, inputs);
         newTransaction.generateSignature(privateKey);
 
-        for (TransactionInput input : inputs) {
-            UTXOs.remove(input.getTransactionOutputId());
+        for (var input : inputs) {
+            unspentTransactionOutputs.remove(input.getTransactionOutputId());
         }
 
         return newTransaction;

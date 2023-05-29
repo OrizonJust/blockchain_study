@@ -1,23 +1,18 @@
 package ru.laverno.blockchain.model;
 
+import lombok.Getter;
+import lombok.Setter;
+
 public class TransactionInput {
 
-    private String transactionOutputId;
-    private TransactionOutput UTXO;
+    @Getter
+    private final String transactionOutputId;
 
-    public TransactionInput(String transactionOutputId) {
+    @Getter
+    @Setter
+    private TransactionOutput unspentTransactionOutput;
+
+    public TransactionInput(final String transactionOutputId) {
         this.transactionOutputId = transactionOutputId;
-    }
-
-    public TransactionOutput getUTXO() {
-        return this.UTXO;
-    }
-
-    public void setUTXO(TransactionOutput UTXO) {
-        this.UTXO = UTXO;
-    }
-
-    public String getTransactionOutputId() {
-        return this.transactionOutputId;
     }
 }
