@@ -10,6 +10,16 @@ repositories {
 }
 
 dependencies {
+    implementation 'org.bouncycastle:bcprov-ext-jdk15on:1.70'
+
+    implementation 'ch.qos.logback:logback-classic:1.4.6'
+
+    compileOnly 'org.projectlombok:lombok:1.18.28'
+    annotationProcessor 'org.projectlombok:lombok:1.18.28'
+
+    testCompileOnly 'org.projectlombok:lombok:1.18.28'
+    testAnnotationProcessor 'org.projectlombok:lombok:1.18.28'
+
     testImplementation 'org.junit.jupiter:junit-jupiter-api:5.8.1'
     testRuntimeOnly 'org.junit.jupiter:junit-jupiter-engine:5.8.1'
 }
